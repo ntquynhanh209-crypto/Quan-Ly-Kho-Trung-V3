@@ -1,0 +1,902 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quản Lý Kho Trứng & Công Nợ V3.0</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+        
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 antialiased min-h-screen">
+    <div id="root"></div>
+
+    <script>
+        const { useState, useEffect, createElement: h } = React;
+
+        const DEFAULT_CATEGORIES = [
+            { id: '1', code: 'DTH', name: 'Đỏ TH', unit: 'Quả' },
+            { id: '2', code: 'TLT', name: 'Trắng LT', unit: 'Quả' },
+            { id: '3', code: 'D20', name: 'Đỏ 20kg', unit: 'Quả' },
+            { id: '4', code: 'D19', name: 'Đỏ 19kg', unit: 'Quả' },
+            { id: '5', code: 'D18', name: 'Đỏ 18kg', unit: 'Quả' },
+            { id: '6', code: 'D17', name: 'Đỏ 17kg', unit: 'Quả' },
+            { id: '7', code: 'D16', name: 'Đỏ 16kg', unit: 'Quả' },
+            { id: '8', code: 'TQN', name: 'Trắng QN', unit: 'Quả' },
+            { id: '9', code: 'TTH', name: 'Trắng TH', unit: 'Quả' },
+            { id: '10', code: 'TO', name: 'Trứng trắng to', unit: 'Quả' },
+            { id: '11', code: 'NHO', name: 'Trứng trắng nhỏ', unit: 'Quả' }
+        ];
+
+        const DEFAULT_SUPPLIERS = [
+            { id: '1', name: 'Trại gà Ba Huân', phone: '0903123456', address: 'Bình Chánh, TP.HCM' },
+            { id: '2', name: 'Trại trứng Cường Phát', phone: '0918234567', address: 'Đồng Nai' },
+            { id: '3', name: 'Công ty Chăn nuôi C.P', phone: '02513836251', address: 'KCN Biên Hòa 2' }
+        ];
+
+        const DEFAULT_CUSTOMERS = [
+            { id: '1', name: 'Đại lý Minh Hải', phone: '0987654321', address: 'Chợ Đầu Mối Bình Điền' },
+            { id: '2', name: 'Siêu thị Bách Hóa Xanh', phone: '19001908', address: 'Toàn quốc' },
+            { id: '3', name: 'Tạp hóa Cô Lan', phone: '0933112233', address: 'Quận 8, TP.HCM' }
+        ];
+
+        const DEFAULT_STAFFS = [
+            { id: '1', name: 'Nguyễn Văn Hùng', code: 'NV01', phone: '0901112233' },
+            { id: '2', name: 'Trần Thị Mai', code: 'NV02', phone: '0902223344' },
+            { id: '3', name: 'Lê Hoàng Nam', code: 'NV03', phone: '0903334455' }
+        ];
+
+        function parseVNNumber(str) {
+            if (typeof str === 'number') return Math.round(str);
+            if (!str) return 0;
+            let clean = str.toString().trim().replace(/\./g, '').replace(/,/g, '');
+            const val = parseFloat(clean);
+            return isNaN(val) ? 0 : Math.round(val);
+        }
+
+        function formatVNNumberInput(val) {
+            const num = parseVNNumber(val);
+            if (num === 0) return '';
+            return num.toLocaleString('vi-VN');
+        }
+
+        function generateTicketNo(type, records) {
+            const prefix = type === 'nhap' ? 'PN-' : 'PX-';
+            let maxNum = 0;
+            if (Array.isArray(records)) {
+                records.forEach(r => {
+                    if (r && r.ticketNo && r.ticketNo.startsWith(prefix)) {
+                        const numPart = parseInt(r.ticketNo.replace(prefix, ''), 10);
+                        if (!isNaN(numPart) && numPart > maxNum) maxNum = numPart;
+                    }
+                });
+            }
+            return `${prefix}${(maxNum + 1).toString().padStart(3, '0')}`;
+        }
+
+        function App() {
+            const [activeTab, setActiveTab] = useState('tongquan');
+            const [infoSubTab, setInfoSubTab] = useState('loaihang');
+
+            const [categories, setCategories] = useState(() => JSON.parse(localStorage.getItem('egg_categories')) || DEFAULT_CATEGORIES);
+            const [suppliers, setSuppliers] = useState(() => JSON.parse(localStorage.getItem('egg_suppliers')) || DEFAULT_SUPPLIERS);
+            const [customers, setCustomers] = useState(() => JSON.parse(localStorage.getItem('egg_customers')) || DEFAULT_CUSTOMERS);
+            const [staffs, setStaffs] = useState(() => JSON.parse(localStorage.getItem('egg_staffs')) || DEFAULT_STAFFS);
+            const [records, setRecords] = useState(() => JSON.parse(localStorage.getItem('egg_records')) || []);
+            const [payments, setPayments] = useState(() => JSON.parse(localStorage.getItem('egg_payments')) || []);
+            const [googleSheetUrl, setGoogleSheetUrl] = useState(() => localStorage.getItem('egg_gsheet_url') || '');
+            const [syncStatus, setSyncStatus] = useState('Chưa gửi dữ liệu');
+            const backupInputRef = React.useRef(null);
+            const exportBackup = () => {
+                const payload = {version: '3.0', exportedAt: new Date().toISOString(), categories, suppliers, customers, staffs, records, payments, googleSheetUrl};
+                const blob = new Blob([JSON.stringify(payload, null, 2)], {type: 'application/json;charset=utf-8'});
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a'); a.href = url; a.download = 'kho-trung-backup-' + new Date().toISOString().slice(0,10) + '.json'; a.click();
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+                showToast('Đã xuất bản sao lưu dữ liệu');
+            };
+            const importBackup = async e => {
+                const file = e.target.files && e.target.files[0]; if (!file) return;
+                try {
+                    const data = JSON.parse(await file.text());
+                    if (!['categories','suppliers','customers','staffs','records','payments'].every(k => Array.isArray(data[k]))) throw new Error('Tệp không đúng định dạng sao lưu');
+                    if (!confirm('Khôi phục sẽ THAY THẾ toàn bộ dữ liệu trên trình duyệt này. Tiếp tục?')) return;
+                    setCategories(data.categories); setSuppliers(data.suppliers); setCustomers(data.customers); setStaffs(data.staffs);
+                    setRecords(data.records); setPayments(data.payments);
+                    if (typeof data.googleSheetUrl === 'string') setGoogleSheetUrl(data.googleSheetUrl);
+                    showToast('Khôi phục dữ liệu thành công');
+                } catch (err) { showToast('Không thể nhập: ' + err.message, 'error'); }
+                finally { e.target.value = ''; }
+            };
+
+            // Bộ lọc Tổng quan (theo ngày)
+            const [overviewStartDate, setOverviewStartDate] = useState('');
+            const [overviewEndDate, setOverviewEndDate] = useState('');
+
+            // Bộ lọc Công nợ (theo ngày)
+            const [debtStartDate, setDebtStartDate] = useState('');
+            const [debtEndDate, setDebtEndDate] = useState('');
+
+            // Bộ lọc Nhật ký
+            const [logFilterStartDate, setLogFilterStartDate] = useState('');
+            const [logFilterEndDate, setLogFilterEndDate] = useState('');
+            const [logFilterType, setLogFilterType] = useState('all');
+            const [logFilterPartner, setLogFilterPartner] = useState('all');
+
+            const [inputMode, setInputMode] = useState('qua');
+            const [inputQty, setInputQty] = useState('');
+            const [formData, setFormData] = useState({
+                ticketNo: '',
+                date: new Date().toISOString().split('T')[0],
+                itemType: '',
+                partner: '',
+                staff: '',
+                price: '',
+                notes: ''
+            });
+
+            const [payModal, setPayModal] = useState({ show: false, id: null, date: new Date().toISOString().split('T')[0], partnerName: '', type: 'customer', amount: '', notes: '' });
+            const [catForm, setCatForm] = useState({ id: null, code: '', name: '', unit: 'Quả' });
+            const [custForm, setCustForm] = useState({ id: null, name: '', phone: '', address: '' });
+            const [suppForm, setSuppForm] = useState({ id: null, name: '', phone: '', address: '' });
+            const [staffForm, setStaffForm] = useState({ id: null, name: '', code: '', phone: '' });
+
+            const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
+
+            useEffect(() => { localStorage.setItem('egg_categories', JSON.stringify(categories)); }, [categories]);
+            useEffect(() => { localStorage.setItem('egg_suppliers', JSON.stringify(suppliers)); }, [suppliers]);
+            useEffect(() => { localStorage.setItem('egg_customers', JSON.stringify(customers)); }, [customers]);
+            useEffect(() => { localStorage.setItem('egg_staffs', JSON.stringify(staffs)); }, [staffs]);
+            useEffect(() => { localStorage.setItem('egg_records', JSON.stringify(records)); }, [records]);
+            useEffect(() => { localStorage.setItem('egg_payments', JSON.stringify(payments)); }, [payments]);
+            useEffect(() => { localStorage.setItem('egg_gsheet_url', googleSheetUrl); }, [googleSheetUrl]);
+
+            useEffect(() => {
+                const defaultCat = categories.length > 0 ? `${categories[0].code} - ${categories[0].name}` : '';
+                const defaultSupp = suppliers.length > 0 ? suppliers[0].name : '';
+                const defaultCust = customers.length > 0 ? customers[0].name : '';
+                const defaultStaff = staffs.length > 0 ? staffs[0].name : '';
+
+                let partnerVal = activeTab === 'nhap' ? defaultSupp : defaultCust;
+
+                setFormData({
+                    ticketNo: generateTicketNo(activeTab, records),
+                    date: new Date().toISOString().split('T')[0],
+                    itemType: defaultCat,
+                    partner: partnerVal,
+                    staff: defaultStaff,
+                    price: '',
+                    notes: ''
+                });
+                setInputQty('');
+            }, [activeTab, records.length, suppliers, customers, staffs, categories]);
+
+            const showToast = (message, type = 'success') => {
+                setToast({ show: true, message, type });
+                setTimeout(() => setToast({ show: false, message: '', type: 'success' }), 3500);
+            };
+
+            const syncToGoogleSheet = async (sheetName, rowData) => {
+                if (!googleSheetUrl) { setSyncStatus('Chưa cấu hình URL Google Apps Script'); return; }
+                if (!/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec(?:\?.*)?$/.test(googleSheetUrl.trim())) {
+                    setSyncStatus('URL Apps Script không hợp lệ'); return;
+                }
+                try {
+                    await fetch(googleSheetUrl.trim(), {
+                        method: 'POST', mode: 'no-cors',
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                        body: JSON.stringify({ sheetName, rowData })
+                    });
+                    // no-cors returns an opaque response: successful receipt cannot be verified.
+                    setSyncStatus('Đã gửi yêu cầu; cần kiểm tra dữ liệu trên Google Sheets');
+                } catch (err) {
+                    setSyncStatus('Lỗi gửi: ' + err.message);
+                    console.error('Lỗi gửi Google Sheets:', err);
+                }
+            };
+
+            const calculatedTotalQua = () => {
+                const rawVal = parseVNNumber(inputQty);
+                return inputMode === 'day' ? rawVal * 300 : rawVal;
+            };
+
+            const calculatedTotalPrice = () => {
+                return calculatedTotalQua() * parseVNNumber(formData.price);
+            };
+
+            const getStockForCategory = (catName) => {
+                const nhap = records.filter(r => r.type === 'nhap' && r.itemType === catName).reduce((a, r) => a + r.quantity, 0);
+                const xuat = records.filter(r => r.type === 'xuat' && r.itemType === catName).reduce((a, r) => a + r.quantity, 0);
+                return nhap - xuat;
+            };
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                const ticketNoToUse = formData.ticketNo.trim() || generateTicketNo(activeTab, records);
+                const qtyNum = calculatedTotalQua();
+                const priceNum = parseVNNumber(formData.price);
+                const totalPriceNum = calculatedTotalPrice();
+
+                if (qtyNum <= 0) {
+                    showToast('Số lượng phải lớn hơn 0!', 'error');
+                    return;
+                }
+
+                if (activeTab === 'xuat') {
+                    const tonKhoCat = getStockForCategory(formData.itemType);
+                    if (qtyNum > tonKhoCat) {
+                        showToast(`Không thể xuất! Kho chỉ còn ${tonKhoCat.toLocaleString('vi-VN')} quả`, 'error');
+                        return;
+                    }
+                }
+
+                let typeLabel = activeTab === 'nhap' ? 'Nhập' : 'Xuất';
+
+                const newRecord = {
+                    id: Date.now().toString(),
+                    ticketNo: ticketNoToUse,
+                    date: formData.date,
+                    type: activeTab,
+                    typeLabel: typeLabel,
+                    itemType: formData.itemType,
+                    inputMode: inputMode,
+                    inputQty: parseVNNumber(inputQty),
+                    quantity: qtyNum,
+                    price: priceNum,
+                    totalPrice: totalPriceNum,
+                    partner: formData.partner || 'Khách lẻ',
+                    staff: formData.staff || 'N/A',
+                    notes: formData.notes
+                };
+
+                const updatedRecords = [newRecord, ...records];
+                setRecords(updatedRecords);
+                setFormData(prev => ({ ...prev, ticketNo: generateTicketNo(activeTab, updatedRecords), price: '', notes: '' }));
+                setInputQty('');
+
+                syncToGoogleSheet(activeTab, [
+                    newRecord.ticketNo,
+                    newRecord.date,
+                    newRecord.typeLabel,
+                    newRecord.itemType,
+                    newRecord.quantity,
+                    newRecord.price,
+                    newRecord.totalPrice,
+                    newRecord.partner,
+                    newRecord.staff,
+                    newRecord.notes
+                ]);
+
+                showToast(`Đã lưu phiếu ${typeLabel} trên thiết bị; kiểm tra đồng bộ tại Google Sheets`);
+            };
+
+            const handleSavePayment = (e) => {
+                e.preventDefault();
+                const payAmount = parseVNNumber(payModal.amount);
+                if (payAmount <= 0) {
+                    showToast('Số tiền thanh toán phải lớn hơn 0!', 'error');
+                    return;
+                }
+
+                if (payModal.id) {
+                    setPayments(payments.map(p => p.id === payModal.id ? { ...p, date: payModal.date, amount: payAmount, notes: payModal.notes || 'Thanh toán công nợ' } : p));
+                    showToast('Đã cập nhật phiếu thanh toán thành công!');
+                } else {
+                    const newPayment = {
+                        id: Date.now().toString(),
+                        date: payModal.date || new Date().toISOString().split('T')[0],
+                        partnerName: payModal.partnerName,
+                        type: payModal.type,
+                        amount: payAmount,
+                        notes: payModal.notes || 'Thanh toán công nợ'
+                    };
+                    setPayments([newPayment, ...payments]);
+
+                    syncToGoogleSheet('thanhtoan', [
+                        newPayment.date,
+                        newPayment.type === 'supplier' ? 'Trả tiền NCC' : 'Thu tiền Khách',
+                        newPayment.partnerName,
+                        newPayment.amount,
+                        newPayment.notes
+                    ]);
+
+                    showToast('Đã lưu thanh toán trên thiết bị; kiểm tra Google Sheets!');
+                }
+
+                setPayModal({ show: false, id: null, date: new Date().toISOString().split('T')[0], partnerName: '', type: 'customer', amount: '', notes: '' });
+            };
+
+            const handleDeletePayment = (id) => {
+                if (confirm('Bạn có chắc chắn muốn xóa phiếu thanh toán này?')) {
+                    setPayments(payments.filter(p => p.id !== id));
+                    showToast('Đã xóa phiếu thành công!');
+                }
+            };
+
+            const handleDeleteRecord = (id) => {
+                if (confirm('Bạn có chắc chắn muốn xóa phiếu này?')) {
+                    setRecords(records.filter(r => r.id !== id));
+                    showToast('Đã xóa phiếu thành công!');
+                }
+            };
+
+            const handleSaveCategory = (e) => {
+                e.preventDefault();
+                if (!catForm.code || !catForm.name) return;
+                if (catForm.id) {
+                    setCategories(categories.map(c => c.id === catForm.id ? catForm : c));
+                    showToast('Đã cập nhật loại hàng!');
+                } else {
+                    setCategories([...categories, { ...catForm, id: Date.now().toString() }]);
+                    showToast('Đã thêm loại hàng mới!');
+                }
+                setCatForm({ id: null, code: '', name: '', unit: 'Quả' });
+            };
+
+            const handleSaveCustomer = (e) => {
+                e.preventDefault();
+                if (!custForm.name) return;
+                if (custForm.id) {
+                    setCustomers(customers.map(c => c.id === custForm.id ? custForm : c));
+                    showToast('Đã cập nhật thông tin khách hàng!');
+                } else {
+                    setCustomers([...customers, { ...custForm, id: Date.now().toString() }]);
+                    showToast('Đã thêm khách hàng mới!');
+                }
+                setCustForm({ id: null, name: '', phone: '', address: '' });
+            };
+
+            const handleSaveSupplier = (e) => {
+                e.preventDefault();
+                if (!suppForm.name) return;
+                if (suppForm.id) {
+                    setSuppliers(suppliers.map(s => s.id === suppForm.id ? suppForm : s));
+                    showToast('Đã cập nhật nhà cung cấp!');
+                } else {
+                    setSuppliers([...suppliers, { ...suppForm, id: Date.now().toString() }]);
+                    showToast('Đã thêm nhà cung cấp mới!');
+                }
+                setSuppForm({ id: null, name: '', phone: '', address: '' });
+            };
+
+            const handleSaveStaff = (e) => {
+                e.preventDefault();
+                if (!staffForm.name) return;
+                if (staffForm.id) {
+                    setStaffs(staffs.map(s => s.id === staffForm.id ? staffForm : s));
+                    showToast('Đã cập nhật nhân viên!');
+                } else {
+                    setStaffs([...staffs, { ...staffForm, id: Date.now().toString() }]);
+                    showToast('Đã thêm nhân viên mới!');
+                }
+                setStaffForm({ id: null, name: '', code: '', phone: '' });
+            };
+
+            // Lọc dữ liệu tổng quan theo ngày
+            const filteredRecordsForOverview = records.filter(r => {
+                if (overviewStartDate && r.date < overviewStartDate) return false;
+                if (overviewEndDate && r.date > overviewEndDate) return false;
+                return true;
+            });
+
+            const totalNhapQuaFiltered = filteredRecordsForOverview.filter(r => r.type === 'nhap').reduce((a, r) => a + r.quantity, 0);
+            const totalXuatQuaFiltered = filteredRecordsForOverview.filter(r => r.type === 'xuat').reduce((a, r) => a + r.quantity, 0);
+            const tonKhoQuaFiltered = totalNhapQuaFiltered - totalXuatQuaFiltered;
+
+            const totalGiaTriNhap = filteredRecordsForOverview.filter(r => r.type === 'nhap').reduce((a, r) => a + r.totalPrice, 0);
+            const totalGiaTriXuat = filteredRecordsForOverview.filter(r => r.type === 'xuat').reduce((a, r) => a + r.totalPrice, 0);
+
+            // Lọc dữ liệu công nợ theo ngày
+            const filteredRecordsForDebt = records.filter(r => {
+                if (debtStartDate && r.date < debtStartDate) return false;
+                if (debtEndDate && r.date > debtEndDate) return false;
+                return true;
+            });
+            const filteredPaymentsForDebt = payments.filter(p => {
+                if (debtStartDate && p.date < debtStartDate) return false;
+                if (debtEndDate && p.date > debtEndDate) return false;
+                return true;
+            });
+
+            const supplierDebts = suppliers.map(s => {
+                const totalNhap = filteredRecordsForDebt.filter(r => r.type === 'nhap' && r.partner === s.name).reduce((a, r) => a + r.totalPrice, 0);
+                const totalPaid = filteredPaymentsForDebt.filter(p => p.type === 'supplier' && p.partnerName === s.name).reduce((a, p) => a + p.amount, 0);
+                return { ...s, totalAmount: totalNhap, paidAmount: totalPaid, remaining: totalNhap - totalPaid };
+            });
+
+            const customerDebts = customers.map(c => {
+                const totalXuat = filteredRecordsForDebt.filter(r => r.type === 'xuat' && r.partner === c.name).reduce((a, r) => a + r.totalPrice, 0);
+                const totalPaid = filteredPaymentsForDebt.filter(p => p.type === 'customer' && p.partnerName === c.name).reduce((a, p) => a + p.amount, 0);
+                return { ...c, totalAmount: totalXuat, paidAmount: totalPaid, remaining: totalXuat - totalPaid };
+            });
+
+            // Lọc dữ liệu Nhật ký chung
+            const filteredLogRecords = records.filter(r => {
+                if (logFilterStartDate && r.date < logFilterStartDate) return false;
+                if (logFilterEndDate && r.date > logFilterEndDate) return false;
+                if (logFilterType !== 'all' && r.type !== logFilterType) return false;
+                if (logFilterPartner !== 'all' && r.partner !== logFilterPartner) return false;
+                return true;
+            });
+
+            return h('div', { className: 'flex flex-col md:flex-row min-h-screen' },
+                h('div', { className: 'w-full md:w-64 bg-slate-900 text-white p-4 shadow-xl flex-shrink-0' },
+                    h('div', { className: 'flex items-center space-x-3 mb-8 px-2 pt-2' },
+                        h('div', { className: 'w-10 h-10 rounded-xl bg-amber-500 flex items-center justify-center text-slate-900 font-black text-xl' }, '🍳'),
+                        h('div', null,
+                            h('h1', { className: 'font-black text-lg text-amber-400' }, 'KHO TRỨNG'),
+                            h('p', { className: 'text-xs text-slate-400' }, 'Quản Lý Kho & Công Nợ · V3.0')
+                        )
+                    ),
+                    h('nav', { className: 'space-y-1' },
+                        [
+                            { id: 'tongquan', label: 'Tổng Quan', icon: 'fa-chart-pie', color: 'bg-amber-500 text-slate-950 font-bold' },
+                            { id: 'nhap', label: 'Phiếu Nhập', icon: 'fa-file-import', color: 'bg-emerald-600 text-white font-bold' },
+                            { id: 'xuat', label: 'Phiếu Xuất', icon: 'fa-file-export', color: 'bg-blue-600 text-white font-bold' },
+                            { id: 'congno', label: 'Báo Cáo Công Nợ', icon: 'fa-scale-balanced', color: 'bg-orange-600 text-white font-bold' },
+                            { id: 'thongtin', label: 'Quản Lý Thông Tin', icon: 'fa-address-book', color: 'bg-indigo-600 text-white font-bold' },
+                            { id: 'nhatky', label: 'Nhật Ký Chung', icon: 'fa-book', color: 'bg-slate-700 text-white font-bold' },
+                            { id: 'cauhinh', label: 'Cấu Hình Google Sheet', icon: 'fa-gear', color: 'bg-slate-800 text-slate-300' }
+                        ].map(tab => 
+                            h('button', {
+                                key: tab.id,
+                                onClick: () => setActiveTab(tab.id),
+                                className: `w-full flex items-center space-x-3 px-4 py-3 rounded-xl font-medium transition ${activeTab === tab.id ? tab.color : 'text-slate-300 hover:bg-slate-800'}`
+                            },
+                                h('i', { className: `fas ${tab.icon} w-5` }),
+                                h('span', null, tab.label)
+                            )
+                        )
+                    )
+                ),
+
+                h('div', { className: 'flex-1 p-4 md:p-8 overflow-y-auto max-w-7xl mx-auto w-full' },
+                    toast.show && h('div', { className: `fixed top-5 right-5 z-50 px-5 py-4 rounded-xl shadow-2xl text-white font-semibold ${toast.type === 'error' ? 'bg-red-600' : 'bg-emerald-600'}` }, toast.message),
+
+                    activeTab === 'tongquan' && h('div', { className: 'space-y-6' },
+                        h('div', { className: 'flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-4 rounded-2xl shadow-sm border' },
+                            h('div', null,
+                                h('h2', { className: 'text-2xl font-bold text-slate-800' }, 'Báo Cáo Tổng Quan Kho & Doanh Thu'),
+                                h('p', { className: 'text-xs text-slate-400 mt-0.5' }, (overviewStartDate || overviewEndDate) ? `Đang hiển thị số liệu từ ${overviewStartDate || 'đầu'} đến ${overviewEndDate || 'nay'}` : 'Đang hiển thị tất cả thời gian')
+                            ),
+                            h('div', { className: 'flex flex-wrap items-center gap-2 text-sm' },
+                                h('span', { className: 'font-semibold text-slate-500' }, 'Từ ngày:'),
+                                h('input', { type: 'date', value: overviewStartDate, onChange: e => setOverviewStartDate(e.target.value), className: 'p-2 rounded-xl border text-sm' }),
+                                h('span', { className: 'font-semibold text-slate-500' }, 'Đến:'),
+                                h('input', { type: 'date', value: overviewEndDate, onChange: e => setOverviewEndDate(e.target.value), className: 'p-2 rounded-xl border text-sm' }),
+                                (overviewStartDate || overviewEndDate) && h('button', { onClick: () => { setOverviewStartDate(''); setOverviewEndDate(''); }, className: 'px-3 py-2 bg-slate-200 rounded-xl font-bold text-xs' }, 'Xóa lọc')
+                            )
+                        ),
+                        h('div', { className: 'grid grid-cols-1 sm:grid-cols-3 gap-4' },
+                            h('div', { className: 'bg-white p-6 rounded-2xl shadow-sm border' },
+                                h('p', { className: 'text-sm font-semibold text-slate-500' }, 'Biến Động Tồn Kho (Trong kỳ)'),
+                                h('p', { className: 'text-3xl font-black text-amber-600 mt-2' }, tonKhoQuaFiltered.toLocaleString('vi-VN'), ' ', h('span', { className: 'text-sm font-normal' }, 'quả')),
+                                h('p', { className: 'text-xs font-semibold text-slate-500 mt-1' }, `= ${(tonKhoQuaFiltered / 300).toFixed(2)} dây (${Math.floor(tonKhoQuaFiltered / 300)} dây ${tonKhoQuaFiltered % 300} quả)`)
+                            ),
+                            h('div', { className: 'bg-white p-6 rounded-2xl shadow-sm border' },
+                                h('p', { className: 'text-sm font-semibold text-slate-500' }, 'Giá Trị Nhập Kho (Theo kỳ)'),
+                                h('p', { className: 'text-3xl font-black text-emerald-600 mt-2' }, totalGiaTriNhap.toLocaleString('vi-VN'), ' đ')
+                            ),
+                            h('div', { className: 'bg-white p-6 rounded-2xl shadow-sm border' },
+                                h('p', { className: 'text-sm font-semibold text-slate-500' }, 'Giá Trị Xuất Kho (Theo kỳ)'),
+                                h('p', { className: 'text-3xl font-black text-blue-600 mt-2' }, totalGiaTriXuat.toLocaleString('vi-VN'), ' đ')
+                            )
+                        ),
+                        h('div', { className: 'bg-white rounded-2xl shadow-sm border p-6 space-y-4' },
+                            h('div', { className: 'flex justify-between items-center' },
+                                h('h3', { className: 'text-lg font-bold text-slate-800' }, 'Chi Tiết Tồn Kho Theo Từng Loại Hàng'),
+                                (overviewStartDate || overviewEndDate) && h('span', { className: 'text-xs font-semibold px-2.5 py-1 bg-amber-100 text-amber-800 rounded-lg' }, 'Số liệu trong kỳ, không phải tồn kho cuối kỳ')
+                            ),
+                            h('div', { className: 'overflow-x-auto' },
+                                h('table', { className: 'w-full text-left' },
+                                    h('thead', { className: 'bg-slate-50 text-xs font-bold text-slate-600 uppercase border-b' },
+                                        h('tr', null,
+                                            h('th', { className: 'p-3' }, 'Loại Hàng'),
+                                            h('th', { className: 'p-3 text-right' }, 'Tổng Nhập'),
+                                            h('th', { className: 'p-3 text-right' }, 'Tổng Xuất'),
+                                            h('th', { className: 'p-3 text-right' }, 'Chênh Lệch Nhập - Xuất Trong Kỳ')
+                                        )
+                                    ),
+                                    h('tbody', { className: 'divide-y text-sm' },
+                                        categories.map(cat => {
+                                            const catFullName = `${cat.code} - ${cat.name}`;
+                                            const nhap = filteredRecordsForOverview.filter(r => r.type === 'nhap' && r.itemType === catFullName).reduce((a, r) => a + r.quantity, 0);
+                                            const xuat = filteredRecordsForOverview.filter(r => r.type === 'xuat' && r.itemType === catFullName).reduce((a, r) => a + r.quantity, 0);
+                                            const ton = nhap - xuat;
+                                            const chiTietDay = `${Math.floor(ton / 300)} dây ${ton % 300} quả`;
+                                            return h('tr', { key: cat.id },
+                                                h('td', { className: 'p-3 font-bold text-slate-800' }, cat.name, ' (', cat.code, ')'),
+                                                h('td', { className: 'p-3 text-right text-emerald-600 font-semibold' }, nhap.toLocaleString('vi-VN')),
+                                                h('td', { className: 'p-3 text-right text-blue-600 font-semibold' }, xuat.toLocaleString('vi-VN')),
+                                                h('td', { className: 'p-3 text-right font-black text-amber-600' }, `${ton.toLocaleString('vi-VN')} quả (${chiTietDay})`)
+                                            );
+                                        })
+                                    )
+                                )
+                            )
+                        )
+                    ),
+
+                    (activeTab === 'nhap' || activeTab === 'xuat') && h('div', { className: 'space-y-6' },
+                        h('h2', { className: 'text-2xl font-bold text-slate-800' }, activeTab === 'nhap' ? 'Tạo Phiếu Nhập Kho' : 'Tạo Phiếu Xuất Kho'),
+                        h('form', { onSubmit: handleSubmit, className: 'bg-white p-6 rounded-2xl shadow-sm border grid grid-cols-1 md:grid-cols-2 gap-4' },
+                            h('div', null,
+                                h('label', { className: 'block text-xs font-bold text-slate-500 uppercase mb-1' }, 'Mã Phiếu'),
+                                h('input', { type: 'text', value: formData.ticketNo, onChange: e => setFormData({ ...formData, ticketNo: e.target.value }), className: 'w-full p-3 rounded-xl border bg-slate-50 font-mono font-bold' })
+                            ),
+                            h('div', null,
+                                h('label', { className: 'block text-xs font-bold text-slate-500 uppercase mb-1' }, 'Ngày Giao Dịch'),
+                                h('input', { type: 'date', value: formData.date, onChange: e => setFormData({ ...formData, date: e.target.value }), className: 'w-full p-3 rounded-xl border' })
+                            ),
+                            h('div', null,
+                                h('label', { className: 'block text-xs font-bold text-slate-500 uppercase mb-1' }, 'Loại Trứng'),
+                                h('select', { value: formData.itemType, onChange: e => setFormData({ ...formData, itemType: e.target.value }), className: 'w-full p-3 rounded-xl border font-medium' },
+                                    categories.map(c => h('option', { key: c.id, value: `${c.code} - ${c.name}` }, `${c.code} - ${c.name}`))
+                                )
+                            ),
+                            h('div', null,
+                                h('label', { className: 'block text-xs font-bold text-slate-500 uppercase mb-1' }, activeTab === 'nhap' ? 'Nhà Cung Cấp' : 'Khách Hàng'),
+                                h('select', { value: formData.partner, onChange: e => setFormData({ ...formData, partner: e.target.value }), className: 'w-full p-3 rounded-xl border font-medium' },
+                                    (activeTab === 'nhap' ? suppliers : customers).map(p => h('option', { key: p.id, value: p.name }, p.name))
+                                )
+                            ),
+                            h('div', null,
+                                h('label', { className: 'block text-xs font-bold text-slate-500 uppercase mb-1' }, 'Đơn Vi Tính / Nhập Theo'),
+                                h('div', { className: 'flex rounded-xl overflow-hidden border p-1 bg-slate-50' },
+                                    h('button', { type: 'button', onClick: () => setInputMode('qua'), className: `flex-1 py-2 font-bold rounded-lg text-sm ${inputMode === 'qua' ? 'bg-amber-500 text-slate-950 shadow' : 'text-slate-500'}` }, 'Quả'),
+                                    h('button', { type: 'button', onClick: () => setInputMode('day'), className: `flex-1 py-2 font-bold rounded-lg text-sm ${inputMode === 'day' ? 'bg-amber-500 text-slate-950 shadow' : 'text-slate-500'}` }, 'Dây (300 quả)')
+                                )
+                            ),
+                            h('div', null,
+                                h('label', { className: 'block text-xs font-bold text-slate-500 uppercase mb-1' }, `Số Lượng (${inputMode === 'day' ? 'Dây' : 'Quả'})`),
+                                h('input', { type: 'text', required: true, value: inputQty ? formatVNNumberInput(inputQty) : '', onChange: e => setInputQty(e.target.value), placeholder: 'Nhập số lượng', className: 'w-full p-3 rounded-xl border font-bold text-lg' })
+                            ),
+                            h('div', null,
+                                h('label', { className: 'block text-xs font-bold text-slate-500 uppercase mb-1' }, 'Đơn Giá / Quả (VNĐ) - Có thể bỏ qua'),
+                                h('input', { type: 'text', value: formData.price ? formatVNNumberInput(formData.price) : '', onChange: e => setFormData({ ...formData, price: e.target.value }), placeholder: 'Ví dụ: 2.200 (hoặc bỏ trống)', className: 'w-full p-3 rounded-xl border font-bold text-lg text-emerald-600' })
+                            ),
+                            h('div', null,
+                                h('label', { className: 'block text-xs font-bold text-slate-500 uppercase mb-1' }, 'Nhân Viên Thực Hiện'),
+                                h('select', { value: formData.staff, onChange: e => setFormData({ ...formData, staff: e.target.value }), className: 'w-full p-3 rounded-xl border font-medium' },
+                                    staffs.map(s => h('option', { key: s.id, value: s.name }, s.name))
+                                )
+                            ),
+                            h('div', { className: 'md:col-span-2' },
+                                h('label', { className: 'block text-xs font-bold text-slate-500 uppercase mb-1' }, 'Ghi Chú'),
+                                h('input', { type: 'text', value: formData.notes, onChange: e => setFormData({ ...formData, notes: e.target.value }), placeholder: 'Ghi chú đơn hàng...', className: 'w-full p-3 rounded-xl border' })
+                            ),
+                            h('div', { className: 'md:col-span-2 bg-slate-50 p-4 rounded-xl flex justify-between items-center border' },
+                                h('div', null,
+                                    h('p', { className: 'text-xs text-slate-500 font-bold uppercase' }, 'Quy đổi thành tiền:'),
+                                    h('p', { className: 'text-2xl font-black text-amber-600' }, calculatedTotalPrice().toLocaleString('vi-VN'), ' đ'),
+                                    h('p', { className: 'text-xs text-slate-400 mt-0.5' }, `Tổng cộng: ${calculatedTotalQua().toLocaleString('vi-VN')} quả`)
+                                ),
+                                h('button', { type: 'submit', className: `px-8 py-3 rounded-xl text-white font-bold text-lg shadow-lg ${activeTab === 'nhap' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-blue-600 hover:bg-blue-700'}` },
+                                    activeTab === 'nhap' ? 'Lưu Phiếu Nhập' : 'Lưu Phiếu Xuất'
+                                )
+                            )
+                        )
+                    ),
+
+                    activeTab === 'congno' && h('div', { className: 'space-y-8' },
+                        payModal.show && h('div', { className: 'fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4' },
+                            h('div', { className: 'bg-white rounded-2xl p-6 max-w-md w-full space-y-4 shadow-2xl' },
+                                h('h3', { className: 'text-lg font-bold text-slate-800' }, payModal.id ? (payModal.type === 'supplier' ? `Sửa Phiếu Trả Tiền: ${payModal.partnerName}` : `Sửa Phiếu Thu Tiền: ${payModal.partnerName}`) : (payModal.type === 'supplier' ? `Trả Tiền Cho NCC: ${payModal.partnerName}` : `Thu Tiền Từ Khách: ${payModal.partnerName}`)),
+                                h('form', { onSubmit: handleSavePayment, className: 'space-y-4' },
+                                    h('div', null,
+                                        h('label', { className: 'block text-xs font-bold text-slate-500 uppercase mb-1' }, 'Ngày Thu / Trả Tiền'),
+                                        h('input', { type: 'date', required: true, value: payModal.date, onChange: e => setPayModal({ ...payModal, date: e.target.value }), className: 'w-full px-4 py-2.5 rounded-xl border' })
+                                    ),
+                                    h('div', null,
+                                        h('label', { className: 'block text-xs font-bold text-slate-500 uppercase mb-1' }, 'Số Tiền (VNĐ)'),
+                                        h('input', { type: 'text', required: true, value: payModal.amount ? formatVNNumberInput(payModal.amount) : '', onChange: e => setPayModal({ ...payModal, amount: e.target.value }), placeholder: 'Nhập số tiền', className: 'w-full px-4 py-3 rounded-xl border font-bold text-lg' })
+                                    ),
+                                    h('div', null,
+                                        h('label', { className: 'block text-xs font-bold text-slate-500 uppercase mb-1' }, 'Ghi Chú'),
+                                        h('input', { type: 'text', value: payModal.notes, onChange: e => setPayModal({ ...payModal, notes: e.target.value }), placeholder: 'Ghi chú thêm', className: 'w-full px-4 py-2.5 rounded-xl border' })
+                                    ),
+                                    h('div', { className: 'flex gap-3' },
+                                        h('button', { type: 'submit', className: 'flex-1 py-3 bg-emerald-600 text-white font-bold rounded-xl' }, 'Xác Nhận'),
+                                        h('button', { type: 'button', onClick: () => setPayModal({ show: false, id: null, date: new Date().toISOString().split('T')[0], partnerName: '', type: 'customer', amount: '', notes: '' }), className: 'px-4 py-3 bg-slate-200 font-bold rounded-xl' }, 'Hủy')
+                                    )
+                                )
+                            )
+                        ),
+                        h('div', { className: 'bg-white p-4 rounded-2xl shadow-sm border flex flex-col md:flex-row justify-between items-start md:items-center gap-4' },
+                            h('div', null,
+                                h('h2', { className: 'text-xl font-bold text-slate-800' }, 'Báo Cáo Tổng Hợp Công Nợ'),
+                                h('p', { className: 'text-xs text-slate-400' }, 'Mặc định hiển thị tổng từ trước đến nay, hoặc chọn khoảng thời gian bên cạnh để xem theo kỳ.')
+                            ),
+                            h('div', { className: 'flex flex-wrap items-center gap-2 text-sm' },
+                                h('span', { className: 'font-semibold text-slate-500' }, 'Từ ngày:'),
+                                h('input', { type: 'date', value: debtStartDate, onChange: e => setDebtStartDate(e.target.value), className: 'p-2 rounded-xl border text-sm' }),
+                                h('span', { className: 'font-semibold text-slate-500' }, 'Đến:'),
+                                h('input', { type: 'date', value: debtEndDate, onChange: e => setDebtEndDate(e.target.value), className: 'p-2 rounded-xl border text-sm' }),
+                                (debtStartDate || debtEndDate) && h('button', { onClick: () => { setDebtStartDate(''); setDebtEndDate(''); }, className: 'px-3 py-2 bg-slate-200 rounded-xl font-bold text-xs' }, 'Xem tất cả')
+                            )
+                        ),
+                        h('div', null,
+                            h('h3', { className: 'text-lg font-bold text-slate-800 mb-3' }, 'Công Nợ Nhà Cung Cấp'),
+                            h('div', { className: 'bg-white rounded-2xl shadow-sm border overflow-hidden' },
+                                h('table', { className: 'w-full text-left' },
+                                    h('thead', { className: 'bg-slate-50 text-xs font-bold text-slate-600 uppercase border-b' },
+                                        h('tr', null, h('th', { className: 'p-4' }, 'Nhà Cung Cấp'), h('th', { className: 'p-4 text-right' }, 'Tổng Mua'), h('th', { className: 'p-4 text-right' }, 'Đã Trả'), h('th', { className: 'p-4 text-right' }, 'Còn Nợ'), h('th', { className: 'p-4 text-center' }, 'Hành Động'))
+                                    ),
+                                    h('tbody', { className: 'divide-y text-sm' },
+                                        supplierDebts.map(s => h('tr', { key: s.id },
+                                            h('td', { className: 'p-4 font-bold' }, s.name),
+                                            h('td', { className: 'p-4 text-right' }, s.totalAmount.toLocaleString('vi-VN'), ' đ'),
+                                            h('td', { className: 'p-4 text-right text-emerald-600 font-bold' }, s.paidAmount.toLocaleString('vi-VN'), ' đ'),
+                                            h('td', { className: 'p-4 text-right font-black text-red-600' }, s.remaining.toLocaleString('vi-VN'), ' đ'),
+                                            h('td', { className: 'p-4 text-center' }, h('button', { onClick: () => setPayModal({ show: true, id: null, date: new Date().toISOString().split('T')[0], partnerName: s.name, type: 'supplier', amount: '', notes: '' }), className: 'px-3 py-1 bg-emerald-600 text-white rounded-lg text-xs font-bold' }, 'Trả Tiền'))
+                                        ))
+                                    )
+                                )
+                            )
+                        ),
+                        h('div', null,
+                            h('h3', { className: 'text-lg font-bold text-slate-800 mb-3' }, 'Công Nợ Khách Hàng'),
+                            h('div', { className: 'bg-white rounded-2xl shadow-sm border overflow-hidden' },
+                                h('table', { className: 'w-full text-left' },
+                                    h('thead', { className: 'bg-slate-50 text-xs font-bold text-slate-600 uppercase border-b' },
+                                        h('tr', null, h('th', { className: 'p-4' }, 'Khách Hàng'), h('th', { className: 'p-4 text-right' }, 'Tổng Mua'), h('th', { className: 'p-4 text-right' }, 'Đã Trả'), h('th', { className: 'p-4 text-right' }, 'Còn Nợ'), h('th', { className: 'p-4 text-center' }, 'Hành Động'))
+                                    ),
+                                    h('tbody', { className: 'divide-y text-sm' },
+                                        customerDebts.map(c => h('tr', { key: c.id },
+                                            h('td', { className: 'p-4 font-bold' }, c.name),
+                                            h('td', { className: 'p-4 text-right' }, c.totalAmount.toLocaleString('vi-VN'), ' đ'),
+                                            h('td', { className: 'p-4 text-right text-blue-600 font-bold' }, c.paidAmount.toLocaleString('vi-VN'), ' đ'),
+                                            h('td', { className: 'p-4 text-right font-black text-red-600' }, c.remaining.toLocaleString('vi-VN'), ' đ'),
+                                            h('td', { className: 'p-4 text-center' }, h('button', { onClick: () => setPayModal({ show: true, id: null, date: new Date().toISOString().split('T')[0], partnerName: c.name, type: 'customer', amount: '', notes: '' }), className: 'px-3 py-1 bg-blue-600 text-white rounded-lg text-xs font-bold' }, 'Thu Tiền'))
+                                        ))
+                                    )
+                                )
+                            )
+                        ),
+                        h('div', null,
+                            h('h3', { className: 'text-lg font-bold text-slate-800 mb-3' }, 'Lịch Sử Phiếu Thu / Trả Tiền Công Nợ'),
+                            h('div', { className: 'bg-white rounded-2xl shadow-sm border overflow-hidden' },
+                                h('table', { className: 'w-full text-left' },
+                                    h('thead', { className: 'bg-slate-50 text-xs font-bold text-slate-600 uppercase border-b' },
+                                        h('tr', null,
+                                            h('th', { className: 'p-4' }, 'Ngày Thu/Trả'),
+                                            h('th', { className: 'p-4' }, 'Loại Giao Dịch'),
+                                            h('th', { className: 'p-4' }, 'Đối Tác'),
+                                            h('th', { className: 'p-4 text-right' }, 'Số Tiền'),
+                                            h('th', { className: 'p-4' }, 'Ghi Chú'),
+                                            h('th', { className: 'p-4 text-center' }, 'Hành Động')
+                                        )
+                                    ),
+                                    h('tbody', { className: 'divide-y text-sm' },
+                                        payments.length === 0 ? h('tr', null, h('td', { colSpan: 6, className: 'p-4 text-center text-slate-400' }, 'Chưa có thanh toán nào')) :
+                                        payments.map(p => h('tr', { key: p.id },
+                                            h('td', { className: 'p-4 font-semibold text-slate-700' }, p.date),
+                                            h('td', { className: 'p-4 font-bold ' + (p.type === 'supplier' ? 'text-emerald-600' : 'text-blue-600') }, p.type === 'supplier' ? 'Trả NCC' : 'Thu Khách'),
+                                            h('td', { className: 'p-4 font-bold' }, p.partnerName),
+                                            h('td', { className: 'p-4 text-right font-black' }, p.amount.toLocaleString('vi-VN'), ' đ'),
+                                            h('td', { className: 'p-4 text-slate-500' }, p.notes),
+                                            h('td', { className: 'p-4 text-center space-x-2' },
+                                                h('button', { onClick: () => setPayModal({ show: true, id: p.id, date: p.date, partnerName: p.partnerName, type: p.type, amount: p.amount, notes: p.notes }), className: 'text-blue-600 hover:text-blue-800 p-1' }, h('i', { className: 'fas fa-pen' })),
+                                                h('button', { onClick: () => handleDeletePayment(p.id), className: 'text-red-500 hover:text-red-700 p-1' }, h('i', { className: 'fas fa-trash' }))
+                                            )
+                                        ))
+                                    )
+                                )
+                            )
+                        )
+                    ),
+
+                    activeTab === 'thongtin' && h('div', { className: 'space-y-6' },
+                        h('div', { className: 'flex space-x-2 border-b pb-2' },
+                            [
+                                { id: 'loaihang', label: 'Loại Hàng Trứng' },
+                                { id: 'ncc', label: 'Nhà Cung Cấp' },
+                                { id: 'khachhang', label: 'Khách Hàng' },
+                                { id: 'nhanvien', label: 'Nhân Viên' }
+                            ].map(sub => h('button', {
+                                key: sub.id,
+                                onClick: () => setInfoSubTab(sub.id),
+                                className: `px-4 py-2 rounded-xl font-bold transition ${infoSubTab === sub.id ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-200'}`
+                            }, sub.label))
+                        ),
+
+                        infoSubTab === 'loaihang' && h('div', { className: 'grid grid-cols-1 md:grid-cols-3 gap-6' },
+                            h('form', { onSubmit: handleSaveCategory, className: 'bg-white p-6 rounded-2xl shadow-sm border space-y-4' },
+                                h('h3', { className: 'font-bold text-lg' }, catForm.id ? 'Sửa Loại Trứng' : 'Thêm Loại Trứng'),
+                                h('input', { type: 'text', placeholder: 'Mã (VD: D18)', required: true, value: catForm.code, onChange: e => setCatForm({ ...catForm, code: e.target.value }), className: 'w-full p-3 rounded-xl border font-bold' }),
+                                h('input', { type: 'text', placeholder: 'Tên loại trứng', required: true, value: catForm.name, onChange: e => setCatForm({ ...catForm, name: e.target.value }), className: 'w-full p-3 rounded-xl border' }),
+                                h('button', { type: 'submit', className: 'w-full py-3 bg-indigo-600 text-white font-bold rounded-xl' }, catForm.id ? 'Cập Nhật' : 'Thêm Mới')
+                            ),
+                            h('div', { className: 'md:col-span-2 bg-white rounded-2xl border overflow-hidden shadow-sm' },
+                                h('table', { className: 'w-full text-left divide-y' },
+                                    h('thead', { className: 'bg-slate-50 text-xs font-bold uppercase p-3' }, h('tr', null, h('th', { className: 'p-3' }, 'Mã'), h('th', { className: 'p-3' }, 'Tên Loại'), h('th', { className: 'p-3 text-center' }, 'Hành Động'))),
+                                    h('tbody', { className: 'divide-y text-sm' }, categories.map(c => h('tr', { key: c.id },
+                                        h('td', { className: 'p-3 font-bold' }, c.code),
+                                        h('td', { className: 'p-3' }, c.name),
+                                        h('td', { className: 'p-3 text-center' }, h('button', { onClick: () => setCatForm(c), className: 'text-indigo-600 font-bold' }, 'Sửa'))
+                                    )))
+                                )
+                            )
+                        ),
+
+                        infoSubTab === 'ncc' && h('div', { className: 'grid grid-cols-1 md:grid-cols-3 gap-6' },
+                            h('form', { onSubmit: handleSaveSupplier, className: 'bg-white p-6 rounded-2xl shadow-sm border space-y-4' },
+                                h('h3', { className: 'font-bold text-lg' }, suppForm.id ? 'Sửa Nhà Cung Cấp' : 'Thêm Nhà Cung Cấp'),
+                                h('input', { type: 'text', placeholder: 'Tên Nhà Cung Cấp', required: true, value: suppForm.name, onChange: e => setSuppForm({ ...suppForm, name: e.target.value }), className: 'w-full p-3 rounded-xl border' }),
+                                h('input', { type: 'text', placeholder: 'Số điện thoại', value: suppForm.phone, onChange: e => setSuppForm({ ...suppForm, phone: e.target.value }), className: 'w-full p-3 rounded-xl border' }),
+                                h('input', { type: 'text', placeholder: 'Địa chỉ', value: suppForm.address, onChange: e => setSuppForm({ ...suppForm, address: e.target.value }), className: 'w-full p-3 rounded-xl border' }),
+                                h('button', { type: 'submit', className: 'w-full py-3 bg-indigo-600 text-white font-bold rounded-xl' }, suppForm.id ? 'Cập Nhật' : 'Thêm Mới')
+                            ),
+                            h('div', { className: 'md:col-span-2 bg-white rounded-2xl border overflow-hidden shadow-sm' },
+                                h('table', { className: 'w-full text-left divide-y' },
+                                    h('thead', { className: 'bg-slate-50 text-xs font-bold uppercase p-3' }, h('tr', null, h('th', { className: 'p-3' }, 'Tên NCC'), h('th', { className: 'p-3' }, 'SĐT'), h('th', { className: 'p-3' }, 'Địa Chỉ'), h('th', { className: 'p-3 text-center' }, 'Hành Động'))),
+                                    h('tbody', { className: 'divide-y text-sm' }, suppliers.map(s => h('tr', { key: s.id },
+                                        h('td', { className: 'p-3 font-bold' }, s.name),
+                                        h('td', { className: 'p-3' }, s.phone),
+                                        h('td', { className: 'p-3' }, s.address),
+                                        h('td', { className: 'p-3 text-center' }, h('button', { onClick: () => setSuppForm(s), className: 'text-indigo-600 font-bold' }, 'Sửa'))
+                                    )))
+                                )
+                            )
+                        ),
+
+                        infoSubTab === 'khachhang' && h('div', { className: 'grid grid-cols-1 md:grid-cols-3 gap-6' },
+                            h('form', { onSubmit: handleSaveCustomer, className: 'bg-white p-6 rounded-2xl shadow-sm border space-y-4' },
+                                h('h3', { className: 'font-bold text-lg' }, custForm.id ? 'Sửa Khách Hàng' : 'Thêm Khách Hàng'),
+                                h('input', { type: 'text', placeholder: 'Tên Khách Hàng', required: true, value: custForm.name, onChange: e => setCustForm({ ...custForm, name: e.target.value }), className: 'w-full p-3 rounded-xl border' }),
+                                h('input', { type: 'text', placeholder: 'Số điện thoại', value: custForm.phone, onChange: e => setCustForm({ ...custForm, phone: e.target.value }), className: 'w-full p-3 rounded-xl border' }),
+                                h('input', { type: 'text', placeholder: 'Địa chỉ', value: custForm.address, onChange: e => setCustForm({ ...custForm, address: e.target.value }), className: 'w-full p-3 rounded-xl border' }),
+                                h('button', { type: 'submit', className: 'w-full py-3 bg-indigo-600 text-white font-bold rounded-xl' }, custForm.id ? 'Cập Nhật' : 'Thêm Mới')
+                            ),
+                            h('div', { className: 'md:col-span-2 bg-white rounded-2xl border overflow-hidden shadow-sm' },
+                                h('table', { className: 'w-full text-left divide-y' },
+                                    h('thead', { className: 'bg-slate-50 text-xs font-bold uppercase p-3' }, h('tr', null, h('th', { className: 'p-3' }, 'Tên Khách Hàng'), h('th', { className: 'p-3' }, 'SĐT'), h('th', { className: 'p-3' }, 'Địa Chỉ'), h('th', { className: 'p-3 text-center' }, 'Hành Động'))),
+                                    h('tbody', { className: 'divide-y text-sm' }, customers.map(c => h('tr', { key: c.id },
+                                        h('td', { className: 'p-3 font-bold' }, c.name),
+                                        h('td', { className: 'p-3' }, c.phone),
+                                        h('td', { className: 'p-3' }, c.address),
+                                        h('td', { className: 'p-3 text-center' }, h('button', { onClick: () => setCustForm(c), className: 'text-indigo-600 font-bold' }, 'Sửa'))
+                                    )))
+                                )
+                            )
+                        ),
+
+                        infoSubTab === 'nhanvien' && h('div', { className: 'grid grid-cols-1 md:grid-cols-3 gap-6' },
+                            h('form', { onSubmit: handleSaveStaff, className: 'bg-white p-6 rounded-2xl shadow-sm border space-y-4' },
+                                h('h3', { className: 'font-bold text-lg' }, staffForm.id ? 'Sửa Nhân Viên' : 'Thêm Nhân Viên'),
+                                h('input', { type: 'text', placeholder: 'Mã NV', value: staffForm.code, onChange: e => setStaffForm({ ...staffForm, code: e.target.value }), className: 'w-full p-3 rounded-xl border' }),
+                                h('input', { type: 'text', placeholder: 'Tên Nhân Viên', required: true, value: staffForm.name, onChange: e => setStaffForm({ ...staffForm, name: e.target.value }), className: 'w-full p-3 rounded-xl border' }),
+                                h('input', { type: 'text', placeholder: 'Số điện thoại', value: staffForm.phone, onChange: e => setStaffForm({ ...staffForm, phone: e.target.value }), className: 'w-full p-3 rounded-xl border' }),
+                                h('button', { type: 'submit', className: 'w-full py-3 bg-indigo-600 text-white font-bold rounded-xl' }, staffForm.id ? 'Cập Nhật' : 'Thêm Mới')
+                            ),
+                            h('div', { className: 'md:col-span-2 bg-white rounded-2xl border overflow-hidden shadow-sm' },
+                                h('table', { className: 'w-full text-left divide-y' },
+                                    h('thead', { className: 'bg-slate-50 text-xs font-bold uppercase p-3' }, h('tr', null, h('th', { className: 'p-3' }, 'Mã NV'), h('th', { className: 'p-3' }, 'Tên Nhân Viên'), h('th', { className: 'p-3' }, 'SĐT'), h('th', { className: 'p-3 text-center' }, 'Hành Động'))),
+                                    h('tbody', { className: 'divide-y text-sm' }, staffs.map(s => h('tr', { key: s.id },
+                                        h('td', { className: 'p-3 font-bold' }, s.code),
+                                        h('td', { className: 'p-3' }, s.name),
+                                        h('td', { className: 'p-3' }, s.phone),
+                                        h('td', { className: 'p-3 text-center' }, h('button', { onClick: () => setStaffForm(s), className: 'text-indigo-600 font-bold' }, 'Sửa'))
+                                    )))
+                                )
+                            )
+                        )
+                    ),
+
+                    activeTab === 'nhatky' && h('div', { className: 'space-y-4' },
+                        h('div', { className: 'flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-4 rounded-2xl shadow-sm border' },
+                            h('h2', { className: 'text-xl font-bold text-slate-800' }, 'Nhật Ký Tất Cả Phiếu Giao Dịch'),
+                            h('div', { className: 'flex flex-wrap items-center gap-2 text-sm w-full md:w-auto' },
+                                h('input', { type: 'date', value: logFilterStartDate, onChange: e => setLogFilterStartDate(e.target.value), className: 'p-2 rounded-xl border text-sm' }),
+                                h('span', { className: 'text-slate-400' }, 'đến'),
+                                h('input', { type: 'date', value: logFilterEndDate, onChange: e => setLogFilterEndDate(e.target.value), className: 'p-2 rounded-xl border text-sm' }),
+                                h('select', { value: logFilterType, onChange: e => setLogFilterType(e.target.value), className: 'p-2 rounded-xl border text-sm' },
+                                    h('option', { value: 'all' }, 'Tất cả loại (Nhập/Xuất)'),
+                                    h('option', { value: 'nhap' }, 'Phiếu Nhập'),
+                                    h('option', { value: 'xuat' }, 'Phiếu Xuất')
+                                ),
+                                h('select', { value: logFilterPartner, onChange: e => setLogFilterPartner(e.target.value), className: 'p-2 rounded-xl border text-sm' },
+                                    h('option', { value: 'all' }, 'Tất cả đối tác'),
+                                    ...suppliers.map(s => h('option', { key: s.id, value: s.name }, s.name)),
+                                    ...customers.map(c => h('option', { key: c.id, value: c.name }, c.name))
+                                ),
+                                (logFilterStartDate || logFilterEndDate || logFilterType !== 'all' || logFilterPartner !== 'all') && h('button', { onClick: () => { setLogFilterStartDate(''); setLogFilterEndDate(''); setLogFilterType('all'); setLogFilterPartner('all'); }, className: 'px-3 py-2 bg-slate-200 rounded-xl font-bold text-xs' }, 'Xóa bộ lọc')
+                            )
+                        ),
+                        h('div', { className: 'bg-white rounded-2xl shadow-sm border overflow-hidden' },
+                            h('table', { className: 'w-full text-left' },
+                                h('thead', { className: 'bg-slate-50 text-xs font-bold text-slate-600 uppercase border-b' },
+                                    h('tr', null,
+                                        h('th', { className: 'p-3' }, 'Mã Phiếu'),
+                                        h('th', { className: 'p-3' }, 'Ngày'),
+                                        h('th', { className: 'p-3' }, 'Loại'),
+                                        h('th', { className: 'p-3' }, 'Mặt Hàng'),
+                                        h('th', { className: 'p-3 text-right' }, 'Số Lượng'),
+                                        h('th', { className: 'p-3 text-right' }, 'Đơn Giá'),
+                                        h('th', { className: 'p-3 text-right' }, 'Thành Tiền'),
+                                        h('th', { className: 'p-3' }, 'Đối Tác'),
+                                        h('th', { className: 'p-3 text-center' }, 'Thao Tác')
+                                    )
+                                ),
+                                h('tbody', { className: 'divide-y text-sm' },
+                                    filteredLogRecords.length === 0 ? h('tr', null, h('td', { colSpan: 9, className: 'p-6 text-center text-slate-400' }, 'Không tìm thấy phiếu giao dịch nào phù hợp với bộ lọc')) :
+                                    filteredLogRecords.map(r => h('tr', { key: r.id },
+                                        h('td', { className: 'p-3 font-mono font-bold' }, r.ticketNo),
+                                        h('td', { className: 'p-3 text-xs' }, r.date),
+                                        h('td', { className: 'p-3 font-bold ' + (r.type === 'nhap' ? 'text-emerald-600' : 'text-blue-600') }, r.typeLabel),
+                                        h('td', { className: 'p-3' }, r.itemType),
+                                        h('td', { className: 'p-3 text-right font-bold' }, r.quantity.toLocaleString('vi-VN'), ' quả'),
+                                        h('td', { className: 'p-3 text-right' }, r.price.toLocaleString('vi-VN'), ' đ'),
+                                        h('td', { className: 'p-3 text-right font-bold text-amber-600' }, r.totalPrice.toLocaleString('vi-VN'), ' đ'),
+                                        h('td', { className: 'p-3' }, r.partner),
+                                        h('td', { className: 'p-3 text-center' }, h('button', { onClick: () => handleDeleteRecord(r.id), className: 'text-red-500 hover:text-red-700' }, h('i', { className: 'fas fa-trash' })))
+                                    ))
+                                )
+                            )
+                        )
+                    ),
+
+                    activeTab === 'cauhinh' && h('div', { className: 'space-y-6 max-w-3xl' },
+                        h('h2', { className: 'text-2xl font-bold text-slate-800' }, 'Sao lưu & Kết nối Google Sheets · V3.0'),
+                        h('div', { className: 'bg-white p-6 rounded-2xl shadow-sm border space-y-4' },
+                            h('h3', { className: 'font-bold' }, 'Sao lưu và khôi phục'),
+                            h('p', { className: 'text-sm text-amber-700' }, 'Dữ liệu vẫn lưu trên trình duyệt hiện tại. Hãy xuất bản sao lưu thường xuyên; xóa dữ liệu trình duyệt có thể làm mất dữ liệu.'),
+                            h('div', { className: 'flex gap-3 flex-wrap' },
+                                h('button', { onClick: exportBackup, className: 'px-5 py-2.5 bg-emerald-700 text-white rounded-xl font-bold' }, 'Tải bản sao lưu JSON'),
+                                h('button', { onClick: () => backupInputRef.current && backupInputRef.current.click(), className: 'px-5 py-2.5 bg-indigo-700 text-white rounded-xl font-bold' }, 'Khôi phục từ JSON'),
+                                h('input', { type: 'file', accept: '.json,application/json', ref: backupInputRef, onChange: importBackup, style: {display: 'none'} })
+                            )
+                        ),
+                        h('div', { className: 'bg-white p-6 rounded-2xl shadow-sm border space-y-4' },
+                            h('label', { className: 'block font-bold text-sm text-slate-700' }, 'Google Apps Script Web App URL:'),
+                            h('input', {
+                                type: 'text',
+                                value: googleSheetUrl,
+                                onChange: e => setGoogleSheetUrl(e.target.value),
+                                placeholder: 'https://script.google.com/macros/s/.../exec',
+                                className: 'w-full p-3 rounded-xl border text-sm font-mono'
+                            }),
+                            h('p', { className: 'text-sm text-slate-600' }, 'Trạng thái: ' + syncStatus),
+                            h('p', { className: 'text-xs text-amber-700' }, 'Chế độ no-cors không xác minh được Google Sheets đã nhận dữ liệu. Sửa/xóa phiếu hoặc thanh toán hiện chỉ cập nhật trên thiết bị, chưa cập nhật lại Sheets.'),
+                            h('button', {
+                                onClick: () => showToast('Đã lưu cấu hình URL trên thiết bị!'),
+                                className: 'px-6 py-2.5 bg-slate-900 text-white font-bold rounded-xl'
+                            }, 'Lưu Cấu Hình'),
+                            h('div', { className: 'bg-slate-50 p-4 rounded-xl text-xs space-y-2 border text-slate-600' },
+                                h('p', { className: 'font-bold text-slate-800' }, 'Hướng dẫn mã Google Apps Script (cho file Google Sheet):'),
+                                h('pre', { className: 'bg-slate-900 text-slate-200 p-3 rounded-lg overflow-x-auto text-xs' }, 
+`function doPost(e) {
+  var data = JSON.parse(e.postData.contents);
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(data.sheetName);
+  if (!sheet) {
+    sheet = SpreadsheetApp.getActiveSpreadsheet().insertSheet(data.sheetName);
+  }
+  sheet.appendRow(data.rowData);
+  return ContentService.createTextOutput("OK");
+}`
+                                )
+                            )
+                        )
+                    )
+                )
+            );
+        }
+
+        ReactDOM.createRoot(document.getElementById('root')).render(h(App));
+    </script>
+</body>
+</html>
